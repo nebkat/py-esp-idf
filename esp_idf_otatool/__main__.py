@@ -81,7 +81,7 @@ def write_otadata(esp: ESPLoader, otadata: OtaDataParameters):
     esp.flash_block(data=otadata.otadata.to_bytes(), seq=0)
     esp.flash_finish()
 
-def load_app_binary(app_binary_file: str, partition: PartitionDefinition) -> (bytes, ImageMetadata):
+def load_app_binary(esp: ESPLoader, app_binary_file: str, partition: PartitionDefinition) -> (bytes, ImageMetadata):
     app_binary_size = os.path.getsize(app_binary_file)
     if app_binary_size > partition.size:
         raise RuntimeError(
@@ -92,6 +92,13 @@ def load_app_binary(app_binary_file: str, partition: PartitionDefinition) -> (by
         image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
     except ValueError as e:
         raise RuntimeError(f"Invalid application binary: {e}")
+
+    if image_metadata.header.chip_id.value != esp.IMAGE_CHIP_ID:
+        raise RuntimeError(
+            f"Chip ID mismatch: "
+            f"attempting to flash {image_metadata.header.chip_id.name} image "
+            f"to {ChipId(esp.IMAGE_CHIP_ID).name} device"
+        )
 
     return app_binary, image_metadata
 
@@ -132,11 +139,12 @@ def command_ota(esp: ESPLoader, partition_table: PartitionTable, app_binary_file
     if not partition:
         raise ValueError(f"Partition ota_{next_slot} not found")
 
-    app_binary, image_metadata = load_app_binary(app_binary_file, partition)
+    app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp, addr_data=[(partition.offset, app_binary_file)])
 
+    print(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)
     write_otadata(esp, otadata)
 
@@ -153,7 +161,7 @@ def command_factory(esp: ESPLoader, partition_table: PartitionTable, app_binary_
     if not partition:
         raise ValueError("No factory or OTA partition found")
 
-    app_binary, image_metadata = load_app_binary(app_binary_file, partition)
+    app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp, addr_data=[(partition.offset, app_binary)])
@@ -194,7 +202,7 @@ def command_reflash(esp: ESPLoader, reflash_file_path: str):
     print(f"New partition table:")
     print_partition_table(partition_table)
     erase_flash(esp)
-    write_flash(esp, addr_data=[(0, reflash_file)])
+    write_flash(esp, addr_data=[(0, reflash_file_path)])
 
 def command_list(esp: ESPLoader, partition_table: PartitionTable):
     print_partition_table(list(part for part in partition_table if part.type == APP_TYPE or (part.type == DATA_TYPE and part.subtype == SUBTYPES[DATA_TYPE]['ota'])))
