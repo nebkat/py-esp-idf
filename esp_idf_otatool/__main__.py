@@ -8,7 +8,7 @@ import serial.tools.list_ports as list_ports
 from build.lib.esptool.loader import ESPLoader
 from esptool import erase_flash
 
-from esp_idf_defs.image_metadata import ImageMetadata
+from esp_idf_defs.image_metadata import ImageMetadata, ChipId
 from esp_idf_defs.otadata import OtaDataSelectEntry
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, TYPES, SUBTYPES, \
     DATA_TYPE, APP_TYPE, NUM_PARTITION_SUBTYPE_APP_OTA, PartitionDefinition, \
@@ -166,10 +166,34 @@ def command_factory(esp: ESPLoader, partition_table: PartitionTable, app_binary_
         print("Erasing 'otadata' partition...")
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
-def command_reflash(esp: ESPLoader, reflash_file: str):
-    erase_flash(esp)
+def command_reflash(esp: ESPLoader, reflash_file_path: str):
+    # Verify the image contains a valid partition table
+    reflash_file = open(reflash_file_path, 'rb')
+    reflash_file.seek(esp.BOOTLOADER_FLASH_OFFSET)
+    bootloader_binary = reflash_file.read(PARTITION_TABLE_OFFSET - esp.BOOTLOADER_FLASH_OFFSET)
+    try:
+        bootloader_image_metadata = ImageMetadata.from_bytes(bootloader_binary)
+    except (RuntimeError, ValueError):
+        raise RuntimeError("Invalid bootloader in reflash image, check the input file (chip type may be incorrect)")
 
-    print(f"Reflashing device with '{reflash_file}'...")
+    if bootloader_image_metadata.header.chip_id.value != esp.IMAGE_CHIP_ID:
+        raise RuntimeError(
+            f"Chip ID mismatch: "
+            f"attempting to flash {bootloader_image_metadata.header.chip_id.name} image "
+            f"to {ChipId(esp.IMAGE_CHIP_ID).name} device"
+        )
+
+    reflash_file.seek(PARTITION_TABLE_OFFSET)
+    partition_table_binary = reflash_file.read(PARTITION_TABLE_SIZE)
+    try:
+        partition_table = PartitionTable.from_binary(partition_table_binary)
+    except RuntimeError:
+        raise RuntimeError("Invalid partition table in reflash image, check the input file")
+
+    print(f"Reflashing device with '{reflash_file_path}'...")
+    print(f"New partition table:")
+    print_partition_table(partition_table)
+    erase_flash(esp)
     write_flash(esp, addr_data=[(0, reflash_file)])
 
 def command_list(esp: ESPLoader, partition_table: PartitionTable):
@@ -212,7 +236,7 @@ def main(args):
     elif args.command == 'factory':
         command_factory(esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
     elif args.command == 'reflash':
-        command_reflash(esp, reflash_file=args.reflash_file)
+        command_reflash(esp, reflash_file_path=args.reflash_file)
     elif args.command == 'list':
         command_list(esp, partition_table=partition_table)
     elif args.command == 'info':
