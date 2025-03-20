@@ -5,7 +5,7 @@ import os
 from typing import Literal
 
 import serial.tools.list_ports as list_ports
-from build.lib.esptool.loader import ESPLoader
+from esptool.loader import ESPLoader
 from esptool import erase_flash
 
 from esp_idf_defs.image_metadata import ImageMetadata, ChipId
