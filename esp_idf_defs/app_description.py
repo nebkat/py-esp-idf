@@ -27,7 +27,7 @@ class AppDescription:
         return f"{self.project_name} {self.version}"
 
     @classmethod
-    def from_bytes(cls, buffer: bytes) -> AppDescription | None:
+    def from_bytes(cls, buffer: bytes) -> AppDescription:
         if len(buffer) < cls.SIZE:
             raise ValueError(f"Invalid app description, expected >= 256 bytes, got {len(buffer)}")
 
@@ -56,3 +56,10 @@ class AppDescription:
             compiled=compiled,
             elf_sha256=elf_sha256
         )
+
+    @classmethod
+    def from_bytes_or_none(cls, buffer: bytes) -> AppDescription | None:
+        try:
+            return cls.from_bytes(buffer)
+        except ValueError:
+            return None
