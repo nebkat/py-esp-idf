@@ -1,0 +1,10 @@
+[build-system]
+    requires = ["setuptools>=64"]
+    build-backend = "setuptools.build_meta"
+
+[project]
+    name = "nebkat-esp-idf"
+    dynamic = ["version", "scripts"]
+
+[tool.setuptools]
+py-modules = ["esp_idf_defs", "esp_idf_parttool"]
