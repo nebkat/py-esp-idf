@@ -20,11 +20,18 @@ class AppDescription:
     idf_version: str
     secure_version: int
     elf_sha256: bytes
-    compiled: str | None = None
+    time: str | None = None
+    date: str | None = None
 
     @property
-    def title(self):
+    def title(self) -> str:
         return f"{self.project_name} {self.version}"
+
+    @property
+    def compiled(self) -> str | None:
+        if self.date and self.time:
+            return f"{self.date} {self.time}"
+        return None
 
     @classmethod
     def from_bytes(cls, buffer: bytes) -> AppDescription:
@@ -44,7 +51,6 @@ class AppDescription:
 
         time = decode_string(80, 16)
         date = decode_string(96, 16)
-        compiled = f"{date} {time}" if date and time else None
 
         elf_sha256 = buffer[144:176]
 
@@ -53,7 +59,8 @@ class AppDescription:
             version=version,
             idf_version=idf_version,
             secure_version=secure_version,
-            compiled=compiled,
+            time=time,
+            date=date,
             elf_sha256=elf_sha256
         )
 
@@ -63,3 +70,15 @@ class AppDescription:
             return cls.from_bytes(buffer)
         except ValueError:
             return None
+
+    def to_bytes(self) -> bytes:
+        buffer = bytearray(self.SIZE)
+        struct.pack_into('<I', buffer, 0, self.MAGIC)
+        struct.pack_into('<I', buffer, 4, self.secure_version)
+        buffer[48:80] = self.project_name.encode('utf-8')[:32].ljust(32, b'\x00')
+        buffer[16:48] = self.version.encode('utf-8')[:32].ljust(32, b'\x00')
+        buffer[112:144] = self.idf_version.encode('utf-8')[:32].ljust(32, b'\x00')
+        buffer[80:96] = self.time.encode('utf-8')[:16].ljust(16, b'\x00')
+        buffer[96:112] = self.date.encode('utf-8')[:16].ljust(16, b'\x00')
+        buffer[144:176] = self.elf_sha256
+        return bytes(buffer)
