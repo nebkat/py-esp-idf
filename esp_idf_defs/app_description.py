@@ -72,13 +72,19 @@ class AppDescription:
             return None
 
     def to_bytes(self) -> bytes:
+        def encode_field(value: str | None, length: int) -> bytes:
+            """Helper function to encode a string or None into a fixed-length byte array."""
+            if value:
+                return value.encode('utf-8')[:length].ljust(length, b'\x00')
+            return b'\x00' * length
+
         buffer = bytearray(self.SIZE)
         struct.pack_into('<I', buffer, 0, self.MAGIC)
         struct.pack_into('<I', buffer, 4, self.secure_version)
-        buffer[48:80] = self.project_name.encode('utf-8')[:32].ljust(32, b'\x00')
-        buffer[16:48] = self.version.encode('utf-8')[:32].ljust(32, b'\x00')
-        buffer[112:144] = self.idf_version.encode('utf-8')[:32].ljust(32, b'\x00')
-        buffer[80:96] = self.time.encode('utf-8')[:16].ljust(16, b'\x00')
-        buffer[96:112] = self.date.encode('utf-8')[:16].ljust(16, b'\x00')
+        buffer[48:80] = encode_field(self.project_name, 32)
+        buffer[16:48] = encode_field(self.version, 32)
+        buffer[112:144] = encode_field(self.idf_version, 32)
+        buffer[80:96] = encode_field(self.time, 16)
+        buffer[96:112] = encode_field(self.date, 16)
         buffer[144:176] = self.elf_sha256
         return bytes(buffer)
