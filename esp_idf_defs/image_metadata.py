@@ -31,6 +31,8 @@ class ImageMetadata:
         checksum = ImageMetadata.CHECKSUM_MAGIC
         app_description: AppDescription | None = None
         for i in range(header.segment_count):
+            if offset + 8 >= len(buffer):
+                raise ValueError(f"Segment {i} out of range (not enough data)")
             address, length = struct.unpack_from('<II', buffer, offset)
             offset += 8
             segment = ImageSegment(offset, length, address)
