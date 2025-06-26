@@ -181,8 +181,9 @@ def command_reflash(esp: ESPLoader, reflash_file_path: str):
     bootloader_binary = reflash_file.read(PARTITION_TABLE_OFFSET - esp.BOOTLOADER_FLASH_OFFSET)
     try:
         bootloader_image_metadata = ImageMetadata.from_bytes(bootloader_binary)
-    except (RuntimeError, ValueError):
-        raise RuntimeError("Invalid bootloader in reflash image, check the input file (chip type may be incorrect)")
+    except (RuntimeError, ValueError) as e:
+        raise RuntimeError("Invalid bootloader in reflash image, check the input file (chip type may be incorrect)")\
+            from e
 
     if bootloader_image_metadata.header.chip_id.value != esp.IMAGE_CHIP_ID:
         raise RuntimeError(
@@ -195,8 +196,8 @@ def command_reflash(esp: ESPLoader, reflash_file_path: str):
     partition_table_binary = reflash_file.read(PARTITION_TABLE_SIZE)
     try:
         partition_table = PartitionTable.from_binary(partition_table_binary)
-    except RuntimeError:
-        raise RuntimeError("Invalid partition table in reflash image, check the input file")
+    except RuntimeError as e:
+        raise RuntimeError("Invalid partition table in reflash image, check the input file") from e
 
     print(f"Reflashing device with '{reflash_file_path}'...")
     print(f"New partition table:")
