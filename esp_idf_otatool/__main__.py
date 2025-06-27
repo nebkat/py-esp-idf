@@ -8,6 +8,7 @@ import serial.tools.list_ports as list_ports
 from esptool.loader import ESPLoader
 from esptool import erase_flash
 
+from esp_idf_defs import AppDescription
 from esp_idf_defs.image_metadata import ImageMetadata, ChipId
 from esp_idf_defs.otadata import OtaDataSelectEntry
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, TYPES, SUBTYPES, \
@@ -205,9 +206,6 @@ def command_reflash(esp: ESPLoader, reflash_file_path: str):
     erase_flash(esp)
     write_flash(esp, addr_data=[(0, reflash_file_path)])
 
-def command_list(esp: ESPLoader, partition_table: PartitionTable):
-    print_partition_table(list(part for part in partition_table if part.type == APP_TYPE or (part.type == DATA_TYPE and part.subtype == SUBTYPES[DATA_TYPE]['ota'])))
-
 def command_info(esp: ESPLoader, partition_table: PartitionTable):
     otadata = read_otadata(esp, partition_table)
 
@@ -233,8 +231,17 @@ def main(args):
         raise RuntimeError("No ESP found")
     esp = esp.run_stub()
 
-    partition_table_binary = esp.read_flash(offset=PARTITION_TABLE_OFFSET, length=PARTITION_TABLE_SIZE)
-    partition_table = PartitionTable.from_binary(partition_table_binary)
+    if args.command == 'reflash':
+        command_reflash(esp, reflash_file_path=args.reflash_file)
+        esp.hard_reset()
+        return
+
+    try:
+        partition_table_binary = esp.read_flash(offset=args.partition_table_offset, length=args.partition_table_size)
+        partition_table = PartitionTable.from_binary(partition_table_binary)
+    except RuntimeError as e:
+        raise RuntimeError("Partition table could not be loaded") from e
+    print_partition_table(partition_table, esp)
 
     if args.command == 'set_boot':
         command_set_boot(esp, partition_table=partition_table, label=args.partition)
@@ -244,10 +251,8 @@ def main(args):
         command_ota(esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
     elif args.command == 'factory':
         command_factory(esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
-    elif args.command == 'reflash':
-        command_reflash(esp, reflash_file_path=args.reflash_file)
     elif args.command == 'list':
-        command_list(esp, partition_table=partition_table)
+        pass
     elif args.command == 'info':
         command_info(esp, partition_table=partition_table)
     else:
@@ -261,6 +266,9 @@ def _main():
 
     parser.add_argument('-p', '--port', help='Serial port device')
     parser.add_argument('-b', '--baud', type=int, help='Baud rate', default=ESPLoader.ESP_ROM_BAUD)
+
+    parser.add_argument('--partition-table-offset', type=auto_int, help='Partition table offset', default=PARTITION_TABLE_OFFSET)
+    parser.add_argument('--partition-table-size', type=auto_int, help='Partition table size', default=PARTITION_TABLE_SIZE)
 
     # Create subparsers
     subparsers = parser.add_subparsers(dest='command', help='Available commands', required=True)

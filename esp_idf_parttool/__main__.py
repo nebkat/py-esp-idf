@@ -92,11 +92,12 @@ def main(args):
         raise RuntimeError("No ESP found")
     esp = esp.run_stub()
 
-    partition_table_binary = esp.read_flash(offset=PARTITION_TABLE_OFFSET, length=PARTITION_TABLE_SIZE)
-    print("Partition table loaded")
-
-    partition_table = PartitionTable.from_binary(partition_table_binary)
-    print_partition_table(partition_table)
+    try:
+        partition_table_binary = esp.read_flash(offset=args.partition_table_offset, length=args.partition_table_size)
+        partition_table = PartitionTable.from_binary(partition_table_binary)
+    except RuntimeError as e:
+        raise RuntimeError("Partition table could not be loaded") from e
+    print_partition_table(partition_table, esp)
 
     if args.command == 'list':
         esp.hard_reset()
@@ -123,6 +124,9 @@ def _main():
 
     parser.add_argument('-p', '--port', help='Serial port device')
     parser.add_argument('-b', '--baud', type=int, help='Serial port baud rate', default=ESPLoader.ESP_ROM_BAUD)
+
+    parser.add_argument('--partition-table-offset', type=auto_int, help='Partition table offset', default=PARTITION_TABLE_OFFSET)
+    parser.add_argument('--partition-table-size', type=auto_int, help='Partition table size', default=PARTITION_TABLE_SIZE)
 
     # Create subparsers
     subparsers = parser.add_subparsers(dest='command', help='Available commands', required=True)

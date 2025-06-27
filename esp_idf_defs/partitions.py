@@ -15,7 +15,11 @@ import hashlib
 import os
 import re
 import struct
-from typing import List
+from typing import List, Optional
+
+from esptool import ESPLoader
+
+from esp_idf_defs.app_description import AppDescription
 
 MAX_PARTITION_LENGTH = 0xC00   # 3K for partition data (96 entries) leaves 1K in a 4K sector for signature
 MD5_PARTITION_BEGIN = b'\xEB\xEB' + b'\xFF' * 14  # The first 2 bytes are like magic numbers for MD5 sum
@@ -58,11 +62,11 @@ def get_ptype_as_int(ptype):
 # Keep this map in sync with esp_partition_subtype_t enum in esp_partition.h
 SUBTYPES = {
     BOOTLOADER_TYPE: {
-        # 'primary': 0x00,  # The tool does not allow to define this partition yet.
+        'primary': 0x00,
         'ota': 0x01,
     },
     PARTITION_TABLE_TYPE: {
-        # 'primary': 0x00,  # The tool does not allow to define this partition yet.
+        'primary': 0x00,
         'ota': 0x01,
     },
     APP_TYPE: {
@@ -140,7 +144,7 @@ md5sum = True
 secure = SECURE_NONE
 offset_part_table = 0
 
-def print_partition_table(partition_table: List[PartitionDefinition]):
+def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader]):
     def addr_format(a, include_sizes):
         if include_sizes:
             for (val, suffix) in [(0x100000, 'M'), (0x400, 'K')]:
@@ -157,15 +161,22 @@ def print_partition_table(partition_table: List[PartitionDefinition]):
     has_flags = any(part.get_flags_list() for part in partition_table)
 
     # Pretty print partition info
-    print("| Name             | Type | Subtype   | Offset     | Size  |" + (" Flags                    |" if has_flags else ""))
-    print("|------------------|------|-----------|------------|-------|" + ("--------------------------|" if has_flags else ""))
+    print("| Name             | Type | Subtype   | Offset     | Size  |" + (" Flags                    |" if has_flags else "") + (" App description                |" if esp else ""))
+    print("|------------------|------|-----------|------------|-------|" + ("--------------------------|" if has_flags else "") + ("--------------------------------|" if esp else ""))
     for part in partition_table:
+        if esp:
+            app_desc_binary = esp.read_flash(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET, AppDescription.SIZE)
+            app_desc = AppDescription.from_bytes_or_none(app_desc_binary)
+        else:
+            app_desc = None
+
         print(f"| {part.name:16} "
               f"| {lookup_keyword(part.type, TYPES):4} "
               f"| {lookup_keyword(part.subtype, SUBTYPES.get(part.type, {})):9} "
               f"| {addr_format(part.offset, False):>10} "
               f"| {addr_format(part.size, True):>5} "
-              f"|" + (f" {':'.join(flag[0:3] for flag in part.get_flags_list()):24} |" if has_flags else ""))
+              f"|" + (f" {':'.join(flag[0:3] for flag in part.get_flags_list()):24} |" if has_flags else "") +
+              f" {app_desc.title if app_desc else '':30} |")
 
 class PartitionTable(list):
     def __init__(self):
@@ -365,6 +376,29 @@ class PartitionDefinition(object):
         self.size = None
         self.encrypted = False
         self.readonly = False
+
+    @classmethod
+    def default_bootloader(cls, offset, size):
+        """ Create a default bootloader partition definition """
+        res = PartitionDefinition()
+        res.name = 'bootloader'
+        res.type = TYPES['bootloader']
+        res.subtype = SUBTYPES[TYPES['bootloader']]['primary']
+        res.offset = offset
+        res.size = size
+        return res
+
+    @classmethod
+    def default_partition_table(cls, offset, size):
+        """ Create a default partition table definition """
+        res = PartitionDefinition()
+        res.name = 'partition_table'
+        res.type = TYPES['partition_table']
+        res.subtype = SUBTYPES[TYPES['partition_table']]['primary']
+        res.offset = offset
+        res.size = size
+        return res
+
 
     @classmethod
     def from_csv(cls, line, line_no):
