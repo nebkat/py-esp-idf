@@ -144,7 +144,7 @@ md5sum = True
 secure = SECURE_NONE
 offset_part_table = 0
 
-def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader]):
+def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader] = None):
     def addr_format(a, include_sizes):
         if include_sizes:
             for (val, suffix) in [(0x100000, 'M'), (0x400, 'K')]:
