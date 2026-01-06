@@ -161,22 +161,62 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
     has_flags = any(part.get_flags_list() for part in partition_table)
 
     # Pretty print partition info
-    print("| Name             | Type | Subtype   | Offset     | Size  |" + (" Flags                    |" if has_flags else "") + (" App description                |" if esp else ""))
-    print("|------------------|------|-----------|------------|-------|" + ("--------------------------|" if has_flags else "") + ("--------------------------------|" if esp else ""))
-    for part in partition_table:
-        if esp:
-            app_desc_binary = esp.read_flash(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET, AppDescription.SIZE)
-            app_desc = AppDescription.from_bytes_or_none(app_desc_binary)
-        else:
-            app_desc = None
+    # 1) Gather all rows of strings
+    rows = []
 
-        print(f"| {part.name:16} "
-              f"| {lookup_keyword(part.type, TYPES):4} "
-              f"| {lookup_keyword(part.subtype, SUBTYPES.get(part.type, {})):9} "
-              f"| {addr_format(part.offset, False):>10} "
-              f"| {addr_format(part.size, True):>5} "
-              f"|" + (f" {':'.join(flag[0:3] for flag in part.get_flags_list()):24} |" if has_flags else "") +
-              f" {app_desc.title if app_desc else '':30} |")
+    # header row
+    header = ["Name", "Type", "Subtype", "Offset", "Size"]
+    if has_flags:
+        header.append("Flags")
+    if esp:
+        header.append("App description")
+    rows.append(header)
+
+    # each data row
+    for part in partition_table:
+        cells = []
+        # basic fields
+        name_str = part.name
+        type_str = lookup_keyword(part.type, TYPES)
+        subtype_str = lookup_keyword(part.subtype, SUBTYPES.get(part.type, {}))
+        offset_str = addr_format(part.offset, False)
+        size_str = addr_format(part.size, True)
+        cells.extend([name_str, type_str, subtype_str, offset_str, size_str])
+
+        # optional flags
+        if has_flags:
+            flag_str = ":".join(f[:3] for f in part.get_flags_list())
+            cells.append(flag_str)
+
+        # optional app description
+        if esp:
+            raw = esp.read_flash(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
+                                 AppDescription.SIZE)
+            desc = AppDescription.from_bytes_or_none(raw)
+            cells.append(desc.title if desc else "")
+
+        rows.append(cells)
+
+    # 2) Compute max width for each column
+    #    zip(*rows) groups together all values of each column
+    col_widths = [max(len(cell) for cell in col) for col in zip(*rows)]
+
+    # 3) Print the table
+    #    build a reusable format string like "| {:<w0} | {:<w1} | … |"
+    fmt_cells = []
+    for i, w in enumerate(col_widths):
+        # left‑align text; you can switch to > for right‑align numeric columns if you like
+        fmt_cells.append(f" {{:<{w}}} ")
+    row_fmt = "|" + "|".join(fmt_cells) + "|"
+
+    # separator line, using dashes
+    sep = "|" + "|".join("-" * (w + 2) for w in col_widths) + "|"
+
+    # output
+    print(row_fmt.format(*rows[0]))
+    print(sep)
+    for data_row in rows[1:]:
+        print(row_fmt.format(*data_row))
 
 class PartitionTable(list):
     def __init__(self):
