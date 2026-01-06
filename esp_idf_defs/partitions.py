@@ -185,7 +185,7 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
 
         # optional flags
         if has_flags:
-            flag_str = ":".join(f[:3] for f in part.get_flags_list())
+            flag_str = ":".join(f for f in part.get_flags_list())
             cells.append(flag_str)
 
         # optional app description
