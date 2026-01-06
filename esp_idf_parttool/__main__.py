@@ -92,11 +92,14 @@ def main(args):
         raise RuntimeError("No ESP found")
     esp = esp.run_stub()
 
-    try:
-        partition_table_binary = esp.read_flash(offset=args.partition_table_offset, length=args.partition_table_size)
-        partition_table = PartitionTable.from_binary(partition_table_binary)
-    except RuntimeError as e:
-        raise RuntimeError("Partition table could not be loaded") from e
+    if args.partition_table_file:
+        partition_table = PartitionTable.from_file(args.partition_table_csv)
+    else:
+        try:
+            partition_table_binary = esp.read_flash(offset=args.partition_table_offset, length=args.partition_table_size)
+            partition_table = PartitionTable.from_binary(partition_table_binary)
+        except RuntimeError as e:
+            raise RuntimeError("Partition table could not be loaded") from e
     print_partition_table(partition_table, esp)
 
     if args.command == 'list':
@@ -125,6 +128,7 @@ def _main():
     parser.add_argument('-p', '--port', help='Serial port device')
     parser.add_argument('-b', '--baud', type=int, help='Serial port baud rate', default=ESPLoader.ESP_ROM_BAUD)
 
+    parser.add_argument('--partition-table-file', help='Path to partition table CSV or binary file to use instead of reading from device')
     parser.add_argument('--partition-table-offset', type=auto_int, help='Partition table offset', default=PARTITION_TABLE_OFFSET)
     parser.add_argument('--partition-table-size', type=auto_int, help='Partition table size', default=PARTITION_TABLE_SIZE)
 
