@@ -407,8 +407,8 @@ class PartitionTable(list):
         if flash_size_bytes < table_size:
             mb = 1024 * 1024
             raise InputError(
-                'Partitions tables occupies %.1fMB of flash (%d bytes) which does not fit in configured '
-                "flash size %dMB. Change the flash size in menuconfig under the 'Serial Flasher Config' menu."
+                'Partitions tables occupies %.1fMB of flash (%d bytes) which does not fit in available '
+                "flash size %dMB."
                 % (table_size / mb, table_size, flash_size_bytes / mb)
             )
 

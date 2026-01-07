@@ -5,7 +5,7 @@ import sys
 from typing import Optional, Literal
 from zipfile import ZipFile
 
-from esptool import ESPLoader, CHIP_DEFS
+from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
@@ -14,7 +14,7 @@ from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, print_partition_table, \
     PartitionDefinition, BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE, APP_TYPE, NUM_PARTITION_SUBTYPE_APP_OTA, \
     DATA_TYPE
-from esptool.cmds import detect_chip, read_flash, write_flash, erase_region, merge_bin, erase_flash
+from esptool.cmds import detect_chip, read_flash, write_flash, erase_region, merge_bin, erase_flash, detect_flash_size
 
 PARTITION_SLICE_REGEX = re.compile(r"^(?P<partition>.+?)(?:\[(?:(?P<start>[-+]?(?:0x)?[0-9A-Fa-f]+)?(?::(?P<stop>[-+]?(?:0x)?[0-9A-Fa-f]+)?)?)?])?$")
 PARTITION_OFFSET_REGEX = re.compile(r"^(?P<partition>.+?)(?:\[(?:(?P<start>[-+]?(?:0x)?[0-9A-Fa-f]+)?)?])?$")
@@ -575,6 +575,11 @@ def main(args):
 
     # Print partition table
     print_partition_table(partition_table, esp)
+
+    if esp:
+        flash_size_str = detect_flash_size(esp)
+        flash_size = flash_size_bytes(flash_size_str)
+        partition_table.verify_size_fits(flash_size)
 
     # Add virtual partition table entry if not present
     partition_table_entry = next(
