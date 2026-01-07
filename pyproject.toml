@@ -7,4 +7,4 @@
     dynamic = ["version", "scripts"]
 
 [tool.setuptools]
-packages = ["esp_idf_defs", "esp_idf_parttool", "esp_idf_otatool"]
+packages = ["esp_idf_defs", "idftool"]

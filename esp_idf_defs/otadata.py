@@ -56,3 +56,31 @@ class OtaDataSelectEntry:
     def incremented(self, ota_slot, ota_count) -> OtaDataSelectEntry:
         ota_slot_diff = (((ota_slot - self.ota_slot(ota_count)) + ota_count - 1) % ota_count) + 1
         return OtaDataSelectEntry(self.seq + ota_slot_diff)
+
+@dataclass
+class OtaDataParameters:
+    otadata: OtaDataSelectEntry | None
+    a_or_b: Literal['a', 'b']
+    app_count: int
+
+    def incremented_and_swapped(self, ota_slot: int) -> OtaDataParameters:
+        return OtaDataParameters(
+            otadata=self.otadata.incremented(ota_slot, self.app_count)
+            if self.otadata else OtaDataSelectEntry.from_ota_slot(ota_slot),
+            a_or_b='a' if self.a_or_b == 'b' else 'b',
+            app_count=self.app_count
+        )
+
+    @property
+    def slot(self):
+        if not self.otadata:
+            return None
+        else:
+            return self.otadata.ota_slot(self.app_count)
+
+    @property
+    def next_slot(self) -> int:
+        if not self.otadata:
+            return 0
+        else:
+            return (self.otadata.ota_slot(self.app_count) + 1) % self.app_count

@@ -4,8 +4,9 @@ from PyInstaller.utils.hooks import collect_data_files
 datas = []
 datas += collect_data_files('esptool')
 
+
 a = Analysis(
-    ['otatool.py'],
+    ['idftool.py'],
     pathex=[],
     binaries=[],
     datas=datas,
@@ -25,7 +26,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='otatool',
+    name='idftool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
