@@ -289,7 +289,11 @@ def command_write(
         addr_data.append((address, input_file))
         print(f"Writing file {input_file} (size={input_file_size:#x}) to partition {partition.name} (offset={address:#x}, size={partition.size:#x})")
 
-    write_flash(esp, addr_data=addr_data)
+    write_flash(
+        esp=esp,
+        addr_data=addr_data,
+        flash_size='detect'
+    )
 
 def command_erase(
         esp: ESPLoader,
@@ -424,7 +428,11 @@ def command_write_bundle(
             addr_data.append((partition.offset, partition_table.to_binary()))
 
         # Perform write
-        write_flash(esp, addr_data=addr_data)
+        write_flash(
+            esp=esp,
+            addr_data=addr_data,
+            flash_size='detect',
+        )
 
 def command_get_boot(esp: ESPLoader, partition_table: PartitionTable):
     _, otadata = read_otadata(esp, partition_table)
@@ -474,7 +482,7 @@ def command_ota(esp: ESPLoader, partition_table: PartitionTable, app_binary_file
     app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
-    write_flash(esp, addr_data=[(partition.offset, app_binary_file)])
+    write_flash(esp=esp, addr_data=[(partition.offset, app_binary_file)])
 
     print(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)
@@ -496,7 +504,7 @@ def command_factory(esp: ESPLoader, partition_table: PartitionTable, app_binary_
     app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
-    write_flash(esp, addr_data=[(partition.offset, app_binary)])
+    write_flash(esp=esp, addr_data=[(partition.offset, app_binary)])
 
     otadata_partition = next(
         (p for p in partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
@@ -524,9 +532,18 @@ def command_reflash(esp: ESPLoader, bootloader_entry: PartitionDefinition, refla
             f"to {ChipId(esp.IMAGE_CHIP_ID).name} device"
         )
 
+    reflash_data: bytes
+    with open(reflash_file_path, 'rb') as reflash_file:
+        reflash_file.seek(esp.BOOTLOADER_FLASH_OFFSET)
+        reflash_data = reflash_file.read()
+
     print(f"Reflashing device with '{reflash_file_path}'...")
     erase_flash(esp)
-    write_flash(esp, addr_data=[(0, reflash_file_path)])
+    write_flash(
+        esp=esp,
+        addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, reflash_data)],
+        flash_size='detect',
+    )
 
 def main(args):
     if args.command == 'devices':
