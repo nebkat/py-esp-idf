@@ -732,7 +732,7 @@ def _main():
     # Read subcommand
     read_parser = subparsers.add_parser('read', help='Read partition')
     read_parser.add_argument('partition', help='Name of the partition to read')
-    read_parser.add_argument('output-file', help='Output file to save the partition data')
+    read_parser.add_argument('output_file', help='Output file to save the partition data')
 
     # Write subcommand
     write_parser = subparsers.add_parser('write', help='Write partitions')
@@ -786,7 +786,7 @@ def _main():
     reflash_parser.add_argument('reflash_file', help='Input file containing flash image')
 
     # Factory subcommand
-    factory_parser = subparsers.add_parser('factory', help='Perform factory flash and reset otadata')
+    factory_parser = subparsers.add_parser('factory', help='Perform factory flash and clear boot partition')
     factory_parser.add_argument('app_binary_file', help='Input file containing app binary')
 
     # Ota subcommand
@@ -794,14 +794,14 @@ def _main():
     ota_parser.add_argument('app_binary_file', help='Input file containing app binary')
 
     # Get Boot subcommand
-    get_boot_parser = subparsers.add_parser('get_boot', help='Get boot partition')
+    get_boot_parser = subparsers.add_parser('get-boot', help='Get boot partition')
 
     # Set Boot subcommand
-    set_boot_parser = subparsers.add_parser('set_boot', help='Set boot partition')
+    set_boot_parser = subparsers.add_parser('set-boot', help='Set boot partition')
     set_boot_parser.add_argument('partition', help='Name of the partition to set as boot')
 
     # Clear Boot subcommand
-    clear_boot_parser = subparsers.add_parser('clear_boot', help='Clear boot partition')
+    clear_boot_parser = subparsers.add_parser('clear-boot', help='Clear boot partition')
 
     main(parser.parse_args())
 
