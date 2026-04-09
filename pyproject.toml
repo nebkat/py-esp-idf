@@ -5,6 +5,7 @@
 [project]
     name = "nebkat-esp-idf"
     dynamic = ["version", "scripts"]
+    dependencies = ["esptool"]
 
 [tool.setuptools]
 packages = ["esp_idf_defs", "idftool"]
