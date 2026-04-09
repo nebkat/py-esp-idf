@@ -280,6 +280,9 @@ def command_write(
         bootloader_entry: Optional[PartitionDefinition],
         files: list[str]
 ):
+    if len(files) % 2 != 0:
+        raise ValueError("Files list must contain pairs of partition name and input file")
+
     addr_data = []
     for partition_name, input_file in list(zip(files[::2], files[1::2])):
         partition, address = get_partition_address(partition_table, partition_table_entry, bootloader_entry, partition_name)
@@ -336,6 +339,9 @@ def command_merge_bin(
         output_format: Literal['raw', 'uf2', 'hex'],
         output_file: str
 ):
+    if len(files) % 2 != 0:
+        raise ValueError("Files list must contain pairs of partition name and input file")
+
     addr_data = []
     for partition_name, input_file in list(zip(files[::2], files[1::2])):
         partition, address = get_partition_address(partition_table, partition_table_entry, bootloader_entry, partition_name)
@@ -370,6 +376,9 @@ def command_create_bundle(
         flash_partition_table: bool,
         output_file: str
 ):
+    if len(files) % 2 != 0:
+        raise ValueError("Files list must contain pairs of partition name and input file")
+
     with ZipFile(output_file, 'w') as zf:
         # Add specified partition files
         for partition_name, input_file in list(zip(files[::2], files[1::2])):
