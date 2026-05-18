@@ -13,12 +13,16 @@ jobs:
         include:
           - platform: windows-amd64
             runner: windows-latest
+            ext: .exe
+            archive_ext: .zip
           - platform: linux-amd64
             runner: ubuntu-24.04
+            ext: ""
+            archive_ext: .tar.gz
           - platform: macos-arm64
             runner: macos-latest
-    env:
-      DISTPATH: idftool-${{ matrix.platform }}
+            ext: ""
+            archive_ext: .tar.gz
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -33,17 +37,42 @@ jobs:
           pip install .
           pip install pyinstaller
 
-      - name: Build with PyInstaller
-        run: pyinstaller --distpath ./${{ env.DISTPATH }} idftool.spec
+      - name: Build onefile with PyInstaller
+        run: pyinstaller --distpath ./dist-onefile --workpath ./build-onefile idftool.spec
 
-      - name: Test binary
-        run: ./${{ env.DISTPATH }}/idftool --help
+      - name: Build onedir with PyInstaller
+        run: pyinstaller --distpath ./dist-onedir --workpath ./build-onedir idftool-onedir.spec
 
-      - name: Archive artifact
-        uses: actions/upload-artifact@v5
+      - name: Test onefile binary
+        run: ./dist-onefile/idftool${{ matrix.ext }} --help
+
+      - name: Test onedir binary
+        run: ./dist-onedir/idftool/idftool${{ matrix.ext }} --help
+
+      - name: Package release files
+        shell: bash
+        run: |
+          mkdir -p release
+          cp "dist-onefile/idftool${{ matrix.ext }}" "release/idftool-${{ matrix.platform }}${{ matrix.ext }}"
+          cd dist-onedir
+          if [[ "${{ matrix.archive_ext }}" == ".zip" ]]; then
+            7z a "../release/idftool-${{ matrix.platform }}-dir.zip" idftool
+          else
+            chmod -R u=rwx,g=rx,o=rx idftool
+            tar -czf "../release/idftool-${{ matrix.platform }}-dir.tar.gz" idftool
+          fi
+
+      - name: Upload onefile artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.DISTPATH }}
-          path: ${{ env.DISTPATH }}
+          path: release/idftool-${{ matrix.platform }}${{ matrix.ext }}
+          archive: false
+
+      - name: Upload onedir artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: release/idftool-${{ matrix.platform }}-dir${{ matrix.archive_ext }}
+          archive: false
 
   create_release:
     name: Create GitHub release
@@ -56,35 +85,30 @@ jobs:
       - name: Get version
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Download built binaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+          skip-decompress: true
 
-      - name: Compress and rename binaries
+      - name: Add version prefix
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
         run: |
-          for dir in idftool-*; do
-            if [[ "$dir" == idftool-win* ]]; then
-              zip -r "idftool-v${{ steps.get_version.outputs.VERSION }}-${dir#idftool-}.zip" "$dir"
-            else
-              chmod -R u=rwx,g=rx,o=rx "$dir"
-              tar -cvzf "idftool-v${{ steps.get_version.outputs.VERSION }}-${dir#idftool-}.tar.gz" "$dir"
-            fi
+          cd release
+          for f in idftool-*; do
+            mv "$f" "idftool-v${VERSION}-${f#idftool-}"
           done
+          ls -la
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: Version ${{ steps.get_version.outputs.VERSION }}
           draft: true
           prerelease: false
-          files: |
-            idftool-v${{ steps.get_version.outputs.VERSION }}-*.zip
-            idftool-v${{ steps.get_version.outputs.VERSION }}-*.tar.gz
+          files: release/idftool-v${{ steps.get_version.outputs.VERSION }}-*
