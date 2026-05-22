@@ -689,11 +689,11 @@ def main(args):
             bootloader_entry=bootloader_entry,
             input_file=args.input_file
         )
-    elif args.command == 'get_boot':
+    elif args.command == 'get-boot':
         command_get_boot(esp=esp, partition_table=partition_table)
-    elif args.command == 'set_boot':
+    elif args.command == 'set-boot':
         command_set_boot(esp=esp, partition_table=partition_table, label=args.partition)
-    elif args.command == 'clear_boot':
+    elif args.command == 'clear-boot':
         command_clear_boot(esp=esp, partition_table=partition_table)
     elif args.command == 'ota':
         command_ota(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
@@ -701,6 +701,8 @@ def main(args):
         command_factory(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
     elif args.command == 'reflash':
         command_reflash(esp=esp, bootloader_entry=bootloader_entry, reflash_file_path=args.reflash_file)
+    else:
+        print(f"Unknown command: {args.command}", file=sys.stderr)
 
     if esp and not args.no_reset: esp.hard_reset()
 
