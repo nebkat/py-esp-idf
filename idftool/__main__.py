@@ -2,6 +2,7 @@ import argparse
 import os.path
 import re
 import sys
+import time
 from typing import Optional, Literal
 from zipfile import ZipFile
 
@@ -554,11 +555,33 @@ def command_reflash(esp: ESPLoader, bootloader_entry: PartitionDefinition, refla
         flash_size='detect',
     )
 
+def command_enter_bootloader(port: str, baud: int, poll_interval: float = 0.05):
+    """Fast-poll a serial port path and enter the ROM bootloader as soon as it appears.
+
+    Skips run_stub and does not reset the chip on exit, so the device is left
+    parked in the ROM bootloader (download mode) for the next tool to grab.
+    """
+    print(f"Waiting for {port}...", file=sys.stderr)
+    while True:
+        while not os.path.exists(port):
+            time.sleep(poll_interval)
+        try:
+            esp = detect_chip(port, baud=baud)
+            break
+        except Exception as e:
+            print(f"Bootloader entry failed: {type(e).__name__}: {e}. Retrying...", file=sys.stderr)
+            time.sleep(poll_interval)
+    print(f"In download mode: {esp.CHIP_NAME} ({port})")
+
 def main(args):
     if args.command == 'devices':
         devices = _get_port_list()
         for d in devices:
             print(f"{d.device} || {d.description} || {d.hwid}")
+        return
+
+    if args.command == 'enter-bootloader':
+        command_enter_bootloader(port=args.port, baud=args.baud)
         return
 
     # Connect to ESP device if required
@@ -813,7 +836,13 @@ def _main():
     # Clear Boot subcommand
     clear_boot_parser = subparsers.add_parser('clear-boot', help='Clear boot partition')
 
-    main(parser.parse_args())
+    # Enter Bootloader subcommand
+    enter_bootloader_parser = subparsers.add_parser('enter-bootloader', help='Fast-poll the serial port and enter the ROM bootloader as soon as the device appears, then exit without resetting')
+
+    args = parser.parse_args()
+    if args.command == 'enter-bootloader' and not args.port:
+        parser.error("enter-bootloader requires -p/--port")
+    main(args)
 
 if __name__ == "__main__":
     _main()
