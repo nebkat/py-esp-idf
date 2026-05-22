@@ -21,6 +21,7 @@ from typing import List, Optional
 from esptool import ESPLoader
 
 from esp_idf_defs.app_description import AppDescription
+from esp_idf_defs.otadata import OtaDataParameters
 
 MAX_PARTITION_LENGTH = 0xC00  # 3K for partition data (96 entries) leaves 1K in a 4K sector for signature
 MD5_PARTITION_BEGIN = b'\xeb\xeb' + b'\xff' * 14  # The first 2 bytes are like magic numbers for MD5 sum
@@ -147,7 +148,7 @@ def get_partition_type(ptype):
         return PARTITION_TABLE_TYPE
     raise InputError('Invalid partition type')
 
-def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader] = None):
+def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader] = None, otadata: Optional[OtaDataParameters] = None):
     def addr_format(a, include_sizes):
         if include_sizes:
             for (val, suffix) in [(0x100000, 'M'), (0x400, 'K')]:
@@ -162,6 +163,8 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
         return f'{t}'
 
     has_flags = any(part.get_flags_list() for part in partition_table)
+    show_active = otadata is not None and otadata.slot is not None
+    active_app_subtype = (SUBTYPES[APP_TYPE]['ota_0'] + otadata.slot) if show_active else None
 
     # Pretty print partition info
     # 1) Gather all rows of strings
@@ -182,6 +185,9 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
         name_str = part.name
         type_str = lookup_keyword(part.type, TYPES)
         subtype_str = lookup_keyword(part.subtype, SUBTYPES.get(part.type, {}))
+        if otadata is not None and part.type == DATA_TYPE and part.subtype == SUBTYPES[DATA_TYPE]['ota']:
+            selector = otadata.a_or_b.upper() if otadata.a_or_b else "invalid"
+            subtype_str = f"{subtype_str} ({selector})"
         offset_str = addr_format(part.offset, False)
         size_str = addr_format(part.size, True)
         cells.extend([name_str, type_str, subtype_str, offset_str, size_str])
@@ -196,7 +202,10 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
             raw = esp.read_flash(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
                                  AppDescription.SIZE)
             desc = AppDescription.from_bytes_or_none(raw)
-            cells.append(desc.title if desc else "")
+            desc_str = desc.title if desc else ""
+            if show_active and part.type == APP_TYPE and part.subtype == active_app_subtype:
+                desc_str = f"{desc_str} *" if desc_str else "*"
+            cells.append(desc_str)
 
         rows.append(cells)
 

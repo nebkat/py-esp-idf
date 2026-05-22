@@ -599,8 +599,16 @@ def main(args):
         except RuntimeError as e:
             raise RuntimeError("Partition table could not be loaded") from e
 
+    # Read otadata so the printed table can mark the active app partition
+    otadata_params: OtaDataParameters | None = None
+    if esp:
+        try:
+            _, otadata_params = read_otadata(esp, partition_table)
+        except ValueError:
+            pass
+
     # Print partition table
-    print_partition_table(partition_table, esp)
+    print_partition_table(partition_table, esp, otadata=otadata_params)
 
     if esp:
         flash_size_str = detect_flash_size(esp)
