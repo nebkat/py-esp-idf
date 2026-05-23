@@ -7,6 +7,7 @@ from typing import Optional, Literal
 from zipfile import ZipFile
 
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
+from serial import SerialException
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
@@ -103,9 +104,7 @@ def get_esp(port: str | None, baud: int) -> ESPLoader:
                 pass
     if not esp:
         raise RuntimeError("No ESP found")
-    esp = esp.run_stub()
-
-    return esp
+    return esp.run_stub()
 
 def get_partition(
         partition_table: PartitionTable,
@@ -331,7 +330,7 @@ def command_view(
     else:
         raise ValueError(f"Invalid output type {output}")
 
-def command_merge_bin(
+def command_create_image(
         partition_table: PartitionTable,
         partition_table_entry: PartitionDefinition,
         bootloader_entry: Optional[PartitionDefinition],
@@ -524,15 +523,35 @@ def command_factory(esp: ESPLoader, partition_table: PartitionTable, app_binary_
         print("Erasing 'otadata' partition...")
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
-def command_reflash(esp: ESPLoader, bootloader_entry: PartitionDefinition, reflash_file_path: str):
-    # Verify the image contains a valid bootloader
-    reflash_file = open(reflash_file_path, 'rb')
-    reflash_file.seek(bootloader_entry.offset)
-    bootloader_binary = reflash_file.read(bootloader_entry.size)
+def command_app_info(app_binary_file: str):
+    app_binary = open(app_binary_file, 'rb').read()
+    try:
+        image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
+    except ValueError as e:
+        raise RuntimeError(f"Invalid application binary: {e}")
+
+    desc = image_metadata.app_description
+    header = image_metadata.header
+
+    print(f"Project name:     {desc.project_name}")
+    print(f"Version:          {desc.version}")
+    print(f"IDF version:      {desc.idf_version}")
+    print(f"Secure version:   {desc.secure_version}")
+    if desc.compiled:
+        print(f"Compiled:         {desc.compiled}")
+    print(f"ELF SHA256:       {desc.elf_sha256.hex()}")
+    max_rev = header.max_chip_rev_full if header.max_chip_rev_full != 0xFFFF else None
+    rev_range = f"rev {header.min_chip_rev_full} to {max_rev}" if max_rev else f"rev {header.min_chip_rev_full}+"
+    print(f"Chip:             {header.chip_id.name} ({rev_range})")
+
+def command_write_image(esp: ESPLoader, bootloader_entry: PartitionDefinition, image_file_path: str):
+    image_file = open(image_file_path, 'rb')
+    image_file.seek(bootloader_entry.offset)
+    bootloader_binary = image_file.read(bootloader_entry.size)
     try:
         bootloader_image_metadata = ImageMetadata.from_bytes(bootloader_binary)
     except (RuntimeError, ValueError) as e:
-        raise RuntimeError("Invalid bootloader in reflash image, check the input file (chip type may be incorrect)")\
+        raise RuntimeError("Invalid bootloader in image, check the input file (chip type may be incorrect)")\
             from e
 
     if bootloader_image_metadata.header.chip_id.value != esp.IMAGE_CHIP_ID:
@@ -542,18 +561,55 @@ def command_reflash(esp: ESPLoader, bootloader_entry: PartitionDefinition, refla
             f"to {ChipId(esp.IMAGE_CHIP_ID).name} device"
         )
 
-    reflash_data: bytes
-    with open(reflash_file_path, 'rb') as reflash_file:
-        reflash_file.seek(esp.BOOTLOADER_FLASH_OFFSET)
-        reflash_data = reflash_file.read()
+    image_data: bytes
+    with open(image_file_path, 'rb') as image_file:
+        image_file.seek(esp.BOOTLOADER_FLASH_OFFSET)
+        image_data = image_file.read()
 
-    print(f"Reflashing device with '{reflash_file_path}'...")
+    print(f"Writing image '{image_file_path}'...")
     erase_flash(esp)
     write_flash(
         esp=esp,
-        addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, reflash_data)],
+        addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, image_data)],
         flash_size='detect',
     )
+
+def command_dump_image(esp: ESPLoader, output_file: Optional[str]):
+    flash_size = flash_size_bytes(detect_flash_size(esp))
+
+    if not output_file:
+        chip = esp.CHIP_NAME.lower().replace(' ', '-')
+        try:
+            mac = esp.read_mac("BASE_MAC")
+            serial = ''.join(f"{b:02x}" for b in mac)
+        except Exception:
+            serial = "unknown"
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        output_file = f"{chip}-{serial}-{timestamp}.img"
+
+    print(f"Dumping {flash_size:#x} bytes of flash to {output_file}...")
+    read_flash(esp, address=0, size=flash_size, output=output_file)
+
+def command_dump_bundle(esp: ESPLoader, partition_table: PartitionTable, output_file: Optional[str]):
+    if not output_file:
+        chip = esp.CHIP_NAME.lower().replace(' ', '-')
+        try:
+            mac = esp.read_mac("BASE_MAC")
+            serial = ''.join(f"{b:02x}" for b in mac)
+        except Exception:
+            serial = "unknown"
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        output_file = f"{chip}-{serial}-{timestamp}.zip"
+
+    with ZipFile(output_file, 'w') as zf:
+        for partition in partition_table:
+            print(f"Reading partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x})")
+            data = esp.read_flash(partition.offset, partition.size)
+            zf.writestr(f"{partition.name}.bin", data)
+        zf.writestr("partition_table.csv", partition_table.to_csv())
+        print(f"Adding partition table CSV to bundle")
+
+    print(f"Bundle written to {output_file}")
 
 def command_enter_bootloader(port: str, baud: int, poll_interval: float = 0.05):
     """Fast-poll a serial port path and enter the ROM bootloader as soon as it appears.
@@ -585,14 +641,18 @@ def main(args):
         return
 
     # Connect to ESP device if required
-    requires_esp = args.command not in ['list', 'merge-bin', 'create-bundle'] or not args.partition_table_file
+    requires_esp = args.command not in ['list', 'create-image', 'create-bundle'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
     if not args.primary_bootloader_offset and esp:
         args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
 
+    if args.command == 'dump-image':
+        command_dump_image(esp=esp, output_file=args.output_file)
+        return
+
     # Load partition table
-    if args.command == 'reflash':
-        with open(args.reflash_file, 'rb') as f:
+    if args.command == 'write-image':
+        with open(args.image_file, 'rb') as f:
             f.seek(args.partition_table_offset)
             partition_table_binary = f.read(args.partition_table_size)
             partition_table = PartitionTable.from_binary(partition_table_binary)
@@ -693,8 +753,8 @@ def main(args):
             output=args.output,
             width=args.width
         )
-    elif args.command == 'merge-bin':
-        command_merge_bin(
+    elif args.command == 'create-image':
+        command_create_image(
             partition_table=partition_table,
             partition_table_entry=partition_table_entry,
             bootloader_entry=bootloader_entry,
@@ -712,6 +772,8 @@ def main(args):
             flash_partition_table=args.flash_partition_table,
             output_file=args.output_file
         )
+    elif args.command == 'dump-bundle':
+        command_dump_bundle(esp=esp, partition_table=partition_table, output_file=args.output_file)
     elif args.command == 'write-bundle':
         command_write_bundle(
             esp=esp,
@@ -730,8 +792,8 @@ def main(args):
         command_ota(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
     elif args.command == 'factory':
         command_factory(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
-    elif args.command == 'reflash':
-        command_reflash(esp=esp, bootloader_entry=bootloader_entry, reflash_file_path=args.reflash_file)
+    elif args.command == 'write-image':
+        command_write_image(esp=esp, bootloader_entry=bootloader_entry, image_file_path=args.image_file)
     else:
         print(f"Unknown command: {args.command}", file=sys.stderr)
 
@@ -787,21 +849,25 @@ def _main():
     view_parser.add_argument('--hex', action='store_const', const='hex', dest='output', help='Output as hex dump', default='hex')
     view_parser.add_argument('-s', '--string', action='store_const', const='str', dest='output', help='Output as string')
 
-    # Merge binaries subcommand
-    merge_bin_parser = subparsers.add_parser('merge-bin', help='Merge binaries into a single image')
-    merge_bin_parser.add_argument('-o', '--output', help='Output filename', dest='output_file', required=True)
-    merge_bin_parser.add_argument('-f', '--format', help='Output format', choices=['raw', 'uf2', 'hex'], default='raw')
-    merge_bin_parser.add_argument('--flash-partition-table', action='store_true', help='Include partition table in the bundle')
-    merge_bin_parser.add_argument(
+    # Create Image subcommand
+    create_image_parser = subparsers.add_parser('create-image', help='Merge partition binaries into a single flash image')
+    create_image_parser.add_argument('-o', '--output', help='Output filename', dest='output_file', required=True)
+    create_image_parser.add_argument('-f', '--format', help='Output format', choices=['raw', 'uf2', 'hex'], default='raw')
+    create_image_parser.add_argument('--flash-partition-table', action='store_true', help='Include partition table in the image')
+    create_image_parser.add_argument(
         'files',
         nargs='+',
         metavar='PARTITION FILENAME',
         help='Partition and filename pairs'
     )
 
-    # Write bundle subcommand
-    write_bundle_parser = subparsers.add_parser('write-bundle', help='Write a ZIP bundle of partition binaries')
-    write_bundle_parser.add_argument('input_file', help='Input ZIP filename')
+    # Dump Image subcommand
+    dump_image_parser = subparsers.add_parser('dump-image', help='Dump the entire flash to an image file')
+    dump_image_parser.add_argument('output_file', nargs='?', help='Output filename (default: {chip}-{mac}-{timestamp}.img)')
+
+    # Write Image subcommand (alias: reflash)
+    write_image_parser = subparsers.add_parser('write-image', aliases=['reflash'], help='Write a full flash image to the device')
+    write_image_parser.add_argument('image_file', help='Input file containing flash image')
 
     # Create bundle subcommand
     create_bundle_parser = subparsers.add_parser('create-bundle', help='Create a ZIP bundle of partition binaries')
@@ -814,9 +880,13 @@ def _main():
         help='Partition and filename pairs'
     )
 
-    # Reflash subcommand
-    reflash_parser = subparsers.add_parser('reflash', help='Perform full system reflash')
-    reflash_parser.add_argument('reflash_file', help='Input file containing flash image')
+    # Dump Bundle subcommand
+    dump_bundle_parser = subparsers.add_parser('dump-bundle', help='Dump all partitions to a ZIP bundle')
+    dump_bundle_parser.add_argument('output_file', nargs='?', help='Output ZIP filename (default: {chip}-{mac}-{timestamp}.zip)')
+
+    # Write bundle subcommand
+    write_bundle_parser = subparsers.add_parser('write-bundle', help='Write a ZIP bundle of partition binaries')
+    write_bundle_parser.add_argument('input_file', help='Input ZIP filename')
 
     # Factory subcommand
     factory_parser = subparsers.add_parser('factory', help='Perform factory flash and clear boot partition')
@@ -840,6 +910,8 @@ def _main():
     enter_bootloader_parser = subparsers.add_parser('enter-bootloader', help='Fast-poll the serial port and enter the ROM bootloader as soon as the device appears, then exit without resetting')
 
     args = parser.parse_args()
+    if args.command == 'reflash':
+        args.command = 'write-image'
     if args.command == 'enter-bootloader' and not args.port:
         parser.error("enter-bootloader requires -p/--port")
     main(args)

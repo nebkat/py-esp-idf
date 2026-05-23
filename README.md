@@ -1,16 +1,15 @@
 # idftool
 
-A CLI built on top of [`esptool`](https://github.com/espressif/esptool)
-with ESP-IDF partition-aware helpers - a long missing tool in the ESP-IDF
-ecosystem.
+A CLI tool built on top of [`esptool`](https://github.com/espressif/esptool)
+that is ESP-IDF partition aware.
 
 ## Why idftool?
 
-`esptool` is designed for flashing Espressif modules but it does not take
-into account ESP-IDF features such as partition tables and OTA schemes.
-This makes it unduly difficult to perform simple tasks such as flashing a
-new firmware binary or pulling log data from a device, requiring memorizing
-raw flash addresses.
+`esptool` is a generic tool for flashing Espressif modules that works with
+arbitrary flash addresses. It does not take into the ESP-IDF partition
+table or OTA mechanism, making it unduly difficult to perform simple tasks
+such as flashing a new firmware binary or pulling log data from a device -
+especially when dealing with multiple devices/partition tables.
 
 `idftool` offers:
 
@@ -20,13 +19,12 @@ raw flash addresses.
 - **OTA slot management.** Inspect the active slot, switch slots, or roll
   back to factory without hand-computing otadata offsets. `idftool list`
   marks the running OTA partition right in the table.
-- **Reproducible multi-binary flashing.** `create-bundle` packs a
-  partition table plus every partition image into a single ZIP;
-  `write-bundle` reflashes the lot in one command.
-- **`enter-bootloader`.** A fast-polling helper that drops the device into
-  ROM download mode the instant the USB port shows up — handy for flaky
-  USB-serial bridges or boards where the timing of the BOOT/RESET dance
-  matters.
+- **Improved safety features.** Writes are checked to ensure they do not
+  overflow the target partition. Firmware binaries are checked to ensure
+  compatibility with the chip being flashed.
+- **Reproducible multi-binary flashing.** `create-bundle` packs multiple
+  partition binaries into a single ZIP; optionally flashing a partition
+  table. `write-bundle` reflashes the lot in one command.
 
 > Pre-built binaries are published on the
 > [Releases](https://github.com/nebkat/py-esp-idf/releases) page.
@@ -157,7 +155,7 @@ idftool view nvs -w 32
 idftool view nvs -s
 ```
 
-### Firmware binaries/images
+### Firmware
 
 #### `ota`
 Push a new app image to the **next** OTA slot, then set it as the boot
@@ -174,14 +172,6 @@ falls back to factory on next boot. If the device has no factory
 partition, the image is written to `ota_0` instead.
 ```text
 idftool factory build/my-app.bin
-```
-
-#### `reflash`
-Erase the entire flash and rewrite it from a full flash image (everything
-from the primary bootloader onward). Useful for restoring a known-good
-image or recovering a bricked device.
-```text
-idftool reflash build/full-flash.bin
 ```
 
 ### Boot selection
@@ -208,6 +198,40 @@ The OTA app images themselves are left untouched.
 idftool clear-boot
 ```
 
+### Images
+
+An image is a single contiguous flash image — everything from the
+primary bootloader through the partition table and partitions in one
+file. Useful for archiving a known-good snapshot, recovering a bricked
+device, or feeding production programmers that can't speak the esptool
+protocol.
+
+#### `create-image`
+Combine partition images into a single contiguous flash image, offline,
+from local files and a partition table.
+```text
+idftool --partition-table-file partitions.csv create-image \
+  -o merged.img --flash-partition-table \
+  ota_0 build/app.bin storage build/spiffs.bin
+```
+
+#### `dump-image`
+Read the entire flash to an image file. If no output filename is given,
+the file is named `{chip}-{mac}-{timestamp}.img` (e.g.
+`esp32-s3-aabbccddeeff-20260522-143000.img`). Works even when the
+on-device partition table is corrupted.
+```text
+idftool dump-image                 # auto-named
+idftool dump-image my-backup.img
+```
+
+#### `write-image` (alias: `reflash`)
+Erase the entire flash and rewrite it from a flash image. The
+counterpart of `dump-image`.
+```text
+idftool write-image build/full-flash.img
+```
+
 ### Bundles
 
 A bundle is a plain ZIP file containing one `*.bin` per partition (named
@@ -222,6 +246,15 @@ to embed the partition table CSV so `write-bundle` can also reflash it.
 idftool --partition-table-file partitions.csv create-bundle \
   -o release.zip --flash-partition-table \
   ota_0 build/app.bin storage build/spiffs.bin
+```
+
+#### `dump-bundle`
+Read every partition from the device and pack them into a bundle ZIP,
+always including `partition_table.csv`. If no output filename is given,
+the file is named `{chip}-{mac}-{timestamp}.zip`.
+```text
+idftool dump-bundle                  # auto-named
+idftool dump-bundle my-backup.zip
 ```
 
 #### `write-bundle`
@@ -245,38 +278,3 @@ isn't fully settled) are retried silently.
 idftool -p /dev/cu.usbmodem1101 enter-bootloader
 ```
 Requires `-p`/`--port`.
-
-#### `merge-bin`
-Combine partition images into a single contiguous flash image — `raw`,
-Intel `hex`, or `uf2`. Useful for production programmers and bootstraps
-that can't speak the esptool protocol.
-```text
-idftool --partition-table-file partitions.csv merge-bin \
-  -o merged.bin -f raw --flash-partition-table \
-  ota_0 build/app.bin storage build/spiffs.bin
-```
-
----
-
-## Troubleshooting
-
-**The device isn't detected, or detection is flaky.**
-Run `idftool -p <port> enter-bootloader` first. It uses a tighter polling
-loop than the default connect and tolerates the brief window where the
-tty node exists but isn't yet fully usable.
-
-**After `clear-boot` the device boots the same partition it was running
-before.**
-That's normal — `clear-boot` only erases otadata; the bootloader's
-fallback target is the factory partition (if present) and otherwise
-`ota_0`. If the previously-running slot happens to be the fallback, the
-running app looks unchanged. Use `set-boot` to pick an explicit slot.
-
-**`factory` ran but there's no factory partition.**
-idftool falls back to writing `ota_0`, then erases otadata so the device
-boots that image on next reset.
-
-**Slice ranges look wrong.**
-Offsets and lengths must lie within the partition's size; negative
-indices count from the end, and a `+N` stop is a length, not an
-absolute offset. See *Partition addressing* above for examples.
