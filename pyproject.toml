@@ -6,8 +6,12 @@
     name = "esp-idf-defs"
     description = "Python data structures for ESP-IDF internals — partition tables, firmware images, OTA data, and app descriptors"
     readme = "README.md"
+    license = "Apache-2.0"
     dynamic = ["version"]
     dependencies = []
+
+[project.urls]
+    Source = "https://github.com/nebkat/py-esp-idf"
 
 [tool.setuptools]
     packages = ["esp_idf_defs"]
