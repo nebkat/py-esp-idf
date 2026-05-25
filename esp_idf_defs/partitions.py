@@ -16,9 +16,10 @@ import hashlib
 import os
 import re
 import struct
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from esptool import ESPLoader
+if TYPE_CHECKING:
+    from esptool import ESPLoader
 
 from esp_idf_defs.app_description import AppDescription
 from esp_idf_defs.otadata import OtaDataParameters

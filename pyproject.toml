@@ -1,11 +1,13 @@
 [build-system]
-    requires = ["setuptools>=64"]
+    requires = ["setuptools>=64", "setuptools-scm"]
     build-backend = "setuptools.build_meta"
 
 [project]
-    name = "nebkat-esp-idf"
-    dynamic = ["version", "scripts"]
-    dependencies = ["esptool"]
+    name = "esp-idf-defs"
+    dynamic = ["version"]
+    dependencies = []
 
 [tool.setuptools]
-packages = ["esp_idf_defs", "idftool"]
+    packages = ["esp_idf_defs"]
+
+[tool.setuptools_scm]

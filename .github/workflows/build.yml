@@ -1,112 +1,42 @@
-name: Build idftool
+name: Publish esp-idf-defs
 
-on: [push, pull_request]
+on:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  build-idftool-binaries:
-    name: Build idftool for ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [windows-amd64, linux-amd64, macos-arm64]
-        include:
-          - platform: windows-amd64
-            runner: windows-latest
-            ext: .exe
-            archive_ext: .zip
-          - platform: linux-amd64
-            runner: ubuntu-24.04
-            ext: ""
-            archive_ext: .tar.gz
-          - platform: macos-arm64
-            runner: macos-latest
-            ext: ""
-            archive_ext: .tar.gz
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - name: Build package
         run: |
-          pip install .
-          pip install pyinstaller
+          pip install build
+          python -m build
 
-      - name: Build onefile with PyInstaller
-        run: pyinstaller --distpath ./dist-onefile --workpath ./build-onefile idftool.spec
-
-      - name: Build onedir with PyInstaller
-        run: pyinstaller --distpath ./dist-onedir --workpath ./build-onedir idftool-onedir.spec
-
-      - name: Test onefile binary
-        run: ./dist-onefile/idftool${{ matrix.ext }} --help
-
-      - name: Test onedir binary
-        run: ./dist-onedir/idftool/idftool${{ matrix.ext }} --help
-
-      - name: Package release files
-        shell: bash
-        run: |
-          mkdir -p release
-          cp "dist-onefile/idftool${{ matrix.ext }}" "release/idftool-${{ matrix.platform }}${{ matrix.ext }}"
-          cd dist-onedir
-          if [[ "${{ matrix.archive_ext }}" == ".zip" ]]; then
-            7z a "../release/idftool-${{ matrix.platform }}-dir.zip" idftool
-          else
-            chmod -R u=rwx,g=rx,o=rx idftool
-            tar -czf "../release/idftool-${{ matrix.platform }}-dir.tar.gz" idftool
-          fi
-
-      - name: Upload onefile artifact
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
-          path: release/idftool-${{ matrix.platform }}${{ matrix.ext }}
-          archive: false
+          name: dist
+          path: dist/
 
-      - name: Upload onedir artifact
-        uses: actions/upload-artifact@v7
-        with:
-          path: release/idftool-${{ matrix.platform }}-dir${{ matrix.archive_ext }}
-          archive: false
-
-  create_release:
-    name: Create GitHub release
+  publish:
+    needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-idftool-binaries
+    environment: pypi
     permissions:
-      contents: write
+      id-token: write
     steps:
-      - name: Get version
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Download built binaries
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
-          path: release
-          merge-multiple: true
-          skip-decompress: true
+          name: dist
+          path: dist/
 
-      - name: Add version prefix
-        env:
-          VERSION: ${{ steps.get_version.outputs.VERSION }}
-        run: |
-          cd release
-          for f in idftool-*; do
-            mv "$f" "idftool-v${VERSION}-${f#idftool-}"
-          done
-          ls -la
-
-      - name: Create release
-        uses: softprops/action-gh-release@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          files: release/idftool-v${{ steps.get_version.outputs.VERSION }}-*
+      - uses: pypa/gh-action-pypi-publish@release/v1
