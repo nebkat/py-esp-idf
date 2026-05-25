@@ -4,6 +4,7 @@
 
 [project]
     name = "esp-idf-defs"
+    description = "Python data structures for ESP-IDF internals — partition tables, firmware images, OTA data, and app descriptors"
     dynamic = ["version"]
     dependencies = []
 
