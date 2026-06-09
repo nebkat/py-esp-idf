@@ -3,7 +3,22 @@ from __future__ import annotations
 import binascii
 import struct
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import ClassVar, Tuple, Literal
+
+
+class OtaImageState(IntEnum):
+    """`esp_ota_img_states_t` — recorded in `OtaDataSelectEntry.ota_state`."""
+    NEW            = 0x0
+    PENDING_VERIFY = 0x1
+    VALID          = 0x2
+    INVALID        = 0x3
+    ABORTED        = 0x4
+    UNDEFINED      = 0xFFFFFFFF
+
+    @classmethod
+    def _missing_(cls, value):
+        return cls.UNDEFINED
 
 
 @dataclass
@@ -12,7 +27,7 @@ class OtaDataSelectEntry:
     SIZE: ClassVar[int] = 32
 
     seq: int
-    ota_state: int = 0
+    ota_state: OtaImageState = OtaImageState.NEW
 
     @classmethod
     def from_ota_slot(cls, ota_slot: int) -> OtaDataSelectEntry:
@@ -25,7 +40,7 @@ class OtaDataSelectEntry:
         if crc != expected_crc or seq == 0xFFFFFFFF:
             return None
         else:
-            return OtaDataSelectEntry(seq, ota_state)
+            return OtaDataSelectEntry(seq, OtaImageState(ota_state))
 
     def to_bytes(self) -> bytes:
         return struct.pack(
