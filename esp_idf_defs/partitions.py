@@ -16,10 +16,7 @@ import hashlib
 import os
 import re
 import struct
-from typing import TYPE_CHECKING, List, Optional
-
-if TYPE_CHECKING:
-    from esptool import ESPLoader
+from typing import Callable, List, Optional
 
 from esp_idf_defs.app_description import AppDescription
 from esp_idf_defs.otadata import OtaDataParameters
@@ -149,7 +146,11 @@ def get_partition_type(ptype):
         return PARTITION_TABLE_TYPE
     raise InputError('Invalid partition type')
 
-def print_partition_table(partition_table: List[PartitionDefinition], esp: Optional[ESPLoader] = None, otadata: Optional[OtaDataParameters] = None):
+def print_partition_table(
+        partition_table: List[PartitionDefinition],
+        read: Optional[Callable[[int, int], bytes]] = None,
+        otadata: Optional[OtaDataParameters] = None,
+):
     def addr_format(a, include_sizes):
         if include_sizes:
             for (val, suffix) in [(0x100000, 'M'), (0x400, 'K')]:
@@ -175,7 +176,7 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
     header = ["Name", "Type", "Subtype", "Offset", "Size"]
     if has_flags:
         header.append("Flags")
-    if esp:
+    if read:
         header.append("App description")
     rows.append(header)
 
@@ -199,9 +200,12 @@ def print_partition_table(partition_table: List[PartitionDefinition], esp: Optio
             cells.append(flag_str)
 
         # optional app description
-        if esp:
-            raw = esp.read_flash(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
-                                 AppDescription.SIZE)
+        if read:
+            try:
+                raw = read(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
+                           AppDescription.SIZE)
+            except (OSError, ValueError):
+                raw = b""
             desc = AppDescription.from_bytes_or_none(raw)
             desc_str = desc.title if desc else ""
             if show_active and part.type == APP_TYPE and part.subtype == active_app_subtype:
