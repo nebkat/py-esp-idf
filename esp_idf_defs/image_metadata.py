@@ -166,6 +166,10 @@ class ChipId(IntEnum):
     ESP32P4 = 0x0012
     ESP32C5 = 0x0017
 
+    @property
+    def chip_name(self) -> str:
+        return self.name.lower()
+
 # `esp_image_flash_size_t`
 class ImageFlashSize(IntEnum):
     MB1 = 0x0
