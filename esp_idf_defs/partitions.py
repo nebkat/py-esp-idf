@@ -201,15 +201,17 @@ def print_partition_table(
 
         # optional app description
         if read:
-            try:
-                raw = read(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
-                           AppDescription.SIZE)
-                desc = AppDescription.from_bytes_or_none(raw)
-                desc_str = desc.title if desc else ""
-            except Exception:
-                # Reads fail for reasons unrelated to the table (comms errors, protected
-                # regions); flag the row instead of taking down the caller.
-                desc_str = "<READ ERROR>"
+            desc_str = ""
+            if part.type == APP_TYPE:
+                try:
+                    raw = read(part.offset + AppDescription.FIRMWARE_BINARY_OFFSET,
+                               AppDescription.SIZE)
+                    desc = AppDescription.from_bytes_or_none(raw)
+                    desc_str = desc.title if desc else ""
+                except Exception:
+                    # Reads fail for reasons unrelated to the table (comms errors, protected
+                    # regions); flag the row instead of taking down the caller.
+                    desc_str = "<READ ERROR>"
             if show_active and part.type == APP_TYPE and part.subtype == active_app_subtype:
                 desc_str = f"{desc_str} *" if desc_str else "*"
             cells.append(desc_str)
