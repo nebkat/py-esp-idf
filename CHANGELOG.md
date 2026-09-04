@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- `print_partition_table` only reads the app description for app partitions.
+
 ## v0.1.5
 
 - `print_partition_table` now tolerates any exception from its `read` callable, not just `OSError`/`ValueError`; a failed read renders as `<READ ERROR>` in the app description column instead of propagating (e.g. esptool's `FatalError` on a comms error, which aborted the caller).
