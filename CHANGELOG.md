@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Add `ResetReason`, `esp_reset_reason_t` as `esp_reset_reason()` returns it, with `is_watchdog`.
+
 ## v0.1.6
 
 - `print_partition_table` only reads the app description for app partitions.
