@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.8
+
+- Ship a `py.typed` marker; the API is annotated and passes `mypy --strict`, so consumers no longer need `follow_untyped_imports` or `untyped_calls_exclude` for it.
+- `OtaDataParameters.a_or_b` is typed `Literal['a', 'b'] | None`, as `OtaDataSelectEntry.select()` returns it when neither entry is valid.
+- `ImageHeader`'s `spi_mode`, `spi_frequency`, `spi_size` and `chip_id` are typed without `None`, as `from_bytes` always sets them.
+- `ImageHeader.max_chip_rev_full` is read from its own offset; it held the last SPI pin drive byte and the low byte of `chip_id`.
+- `OtaDataSelectEntry.from_bytes` checks the entry's CRC, returning `None` for an entry with a bad one, as the bootloader ignores it.
+- The partition table MD5 mismatch error shows the parsed digest in hex.
+
 ## v0.1.7
 
 - Add `ResetReason`, `esp_reset_reason_t` as `esp_reset_reason()` returns it, with `is_watchdog`.
