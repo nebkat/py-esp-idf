@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from functools import reduce
 from hashlib import sha256
-from typing import ClassVar, NamedTuple, List
+from typing import ClassVar, NamedTuple, List, Tuple
 
 from esp_idf_defs.app_description import AppDescription
 
@@ -120,13 +120,13 @@ class ImageHeader:
         )
 
     segment_count: int
-    spi_mode: ImageSpiMode | None
-    spi_frequency: ImageSpiFrequency | None
-    spi_size: ImageFlashSize | None
+    spi_mode: ImageSpiMode
+    spi_frequency: ImageSpiFrequency
+    spi_size: ImageFlashSize
     entry_address: int
     wp_pin: int | None
-    spi_pin_drv: (int, int, int)
-    chip_id: ChipId | None
+    spi_pin_drv: Tuple[int, int, int]
+    chip_id: ChipId
     min_chip_rev: int
     min_chip_rev_full: int
     max_chip_rev_full: int
