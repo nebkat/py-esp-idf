@@ -36,7 +36,7 @@ class OtaDataSelectEntry:
     @classmethod
     def from_bytes(cls, buffer: bytes) -> OtaDataSelectEntry | None:
         seq, ota_state, crc = struct.unpack_from('<I20xII', buffer, 0)
-        expected_crc = crc = binascii.crc32(struct.pack('I', seq), 0xFFFFFFFF)
+        expected_crc = binascii.crc32(struct.pack('I', seq), 0xFFFFFFFF)
         if crc != expected_crc or seq == 0xFFFFFFFF:
             return None
         else:
