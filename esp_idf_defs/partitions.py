@@ -16,7 +16,7 @@ import hashlib
 import os
 import re
 import struct
-from typing import Callable, List, Optional
+from typing import IO, Callable, Iterator, List, Mapping, Optional, Sequence, SupportsIndex, cast, overload
 
 from esp_idf_defs.app_description import AppDescription
 from esp_idf_defs.otadata import OtaDataParameters
@@ -52,15 +52,14 @@ TYPES = {
 NVS_RW_MIN_PARTITION_SIZE = 0x3000
 
 
-def get_ptype_as_int(ptype):
+def get_ptype_as_int(ptype: str | int) -> int:
     """ Convert a string which might be numeric or the name of a partition type to an integer"""
+    if not isinstance(ptype, str):
+        return ptype
     try:
         return TYPES[ptype]
     except KeyError:
-        try:
-            return int(ptype, 0)
-        except TypeError:
-            return ptype
+        return int(ptype, 0)
 
 
 # Keep this map in sync with esp_partition_subtype_t enum in esp_partition.h
@@ -95,15 +94,15 @@ SUBTYPES = {
 }
 
 
-def get_subtype_as_int(ptype, subtype):
+def get_subtype_as_int(ptype: str | int, subtype: str | int) -> int:
     """ Convert a string which might be numeric or the name of a partition subtype to an integer"""
+    ptype_int = get_ptype_as_int(ptype)
+    if not isinstance(subtype, str):
+        return subtype
     try:
-        return SUBTYPES[get_ptype_as_int(ptype)][subtype]
+        return SUBTYPES[ptype_int][subtype]
     except KeyError:
-        try:
-            return int(subtype, 0)
-        except TypeError:
-            return subtype
+        return int(subtype, 0)
 
 
 ALIGNMENT = {
@@ -114,11 +113,11 @@ ALIGNMENT = {
 }
 
 
-def get_alignment_offset_for_type(ptype):
+def get_alignment_offset_for_type(ptype: int) -> int:
     return ALIGNMENT.get(ptype, ALIGNMENT[DATA_TYPE])
 
 
-def get_alignment_size_for_type(ptype, secure: Optional[str] = SECURE_NONE):
+def get_alignment_size_for_type(ptype: int, secure: Optional[str] = SECURE_NONE) -> int:
     if ptype == APP_TYPE:
         if secure == SECURE_V1:
             # For secure boot v1 case, app partition must be 64K aligned
@@ -135,7 +134,7 @@ def get_alignment_size_for_type(ptype, secure: Optional[str] = SECURE_NONE):
     return 0x1
 
 
-def get_partition_type(ptype):
+def get_partition_type(ptype: str) -> int:
     if ptype == 'app':
         return APP_TYPE
     if ptype == 'data':
@@ -147,30 +146,31 @@ def get_partition_type(ptype):
     raise InputError('Invalid partition type')
 
 def print_partition_table(
-        partition_table: List[PartitionDefinition],
+        partition_table: Sequence[PartitionDefinition],
         read: Optional[Callable[[int, int], bytes]] = None,
         otadata: Optional[OtaDataParameters] = None,
-):
-    def addr_format(a, include_sizes):
+) -> None:
+    def addr_format(a: int, include_sizes: bool) -> str:
         if include_sizes:
             for (val, suffix) in [(0x100000, 'M'), (0x400, 'K')]:
                 if a % val == 0:
                     return f'{a // val}{suffix}'
         return f'0x{a:x}'
 
-    def lookup_keyword(t, keywords):
+    def lookup_keyword(t: int, keywords: Mapping[str, int]) -> str:
         for k, v in keywords.items():
             if t == v:
                 return k
         return f'{t}'
 
     has_flags = any(part.get_flags_list() for part in partition_table)
-    show_active = otadata is not None and otadata.slot is not None
-    active_app_subtype = (SUBTYPES[APP_TYPE]['ota_0'] + otadata.slot) if show_active else None
+    active_slot = otadata.slot if otadata is not None else None
+    show_active = active_slot is not None
+    active_app_subtype = (SUBTYPES[APP_TYPE]['ota_0'] + active_slot) if active_slot is not None else None
 
     # Pretty print partition info
     # 1) Gather all rows of strings
-    rows = []
+    rows: List[List[str]] = []
 
     # header row
     header = ["Name", "Type", "Subtype", "Offset", "Size"]
@@ -182,7 +182,7 @@ def print_partition_table(
 
     # each data row
     for part in partition_table:
-        cells = []
+        cells: List[str] = []
         # basic fields
         name_str = part.name
         type_str = lookup_keyword(part.type, TYPES)
@@ -239,7 +239,7 @@ def print_partition_table(
     for data_row in rows[1:]:
         print(row_fmt.format(*data_row))
 
-def get_encoding(first_bytes):
+def get_encoding(first_bytes: bytes) -> str:
     """Detect the encoding by checking for BOM (Byte Order Mark)"""
     BOMS = {
         codecs.BOM_UTF8: 'utf-8-sig',
@@ -253,12 +253,12 @@ def get_encoding(first_bytes):
             return encoding
     return 'utf-8'
 
-class PartitionTable(list):
-    def __init__(self):
+class PartitionTable(List["PartitionDefinition"]):
+    def __init__(self) -> None:
         super(PartitionTable, self).__init__(self)
 
     @classmethod
-    def from_file(cls, f, partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None):
+    def from_file(cls, f: IO[bytes], partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None) -> tuple[PartitionTable, bool]:
         bin_data = f.read()
         data_is_binary = bin_data[0:2] == PartitionDefinition.MAGIC_BYTES
         if data_is_binary:
@@ -268,11 +268,11 @@ class PartitionTable(list):
         return cls.from_csv(str_data, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset), False
 
     @classmethod
-    def from_csv(cls, csv_contents, partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None):
+    def from_csv(cls, csv_contents: str, partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None) -> PartitionTable:
         res = PartitionTable()
         lines = csv_contents.splitlines()
 
-        def expand_vars(f):
+        def expand_vars(f: str) -> str:
             f = os.path.expandvars(f)
             m = re.match(r'(?<!\\)\$([A-Za-z_][A-Za-z0-9_]*)', f)
             if m:
@@ -324,7 +324,13 @@ class PartitionTable(list):
 
         return res
 
-    def __getitem__(self, item) -> PartitionDefinition:
+    @overload
+    def __getitem__(self, item: SupportsIndex | str) -> PartitionDefinition: ...
+
+    @overload
+    def __getitem__(self, item: slice) -> List[PartitionDefinition]: ...
+
+    def __getitem__(self, item: SupportsIndex | str | slice) -> PartitionDefinition | List[PartitionDefinition]:
         """Allow partition table access via name as well as by
         numeric index."""
         if isinstance(item, str):
@@ -335,7 +341,7 @@ class PartitionTable(list):
         else:
             return super(PartitionTable, self).__getitem__(item)
 
-    def find_by_type(self, ptype, subtype):
+    def find_by_type(self, ptype: str | int, subtype: str | int) -> Iterator[PartitionDefinition]:
         """Return a partition by type & subtype, returns
         None if not found"""
         # convert ptype & subtypes names (if supplied this way) to integer values
@@ -347,13 +353,13 @@ class PartitionTable(list):
                 yield p
         return
 
-    def find_by_name(self, name):
+    def find_by_name(self, name: str) -> PartitionDefinition | None:
         for p in self:
             if p.name == name:
                 return p
         return None
 
-    def verify(self, partition_table_offset: Optional[int] = None, secure: Optional[str] = SECURE_NONE):
+    def verify(self, partition_table_offset: Optional[int] = None, secure: Optional[str] = SECURE_NONE) -> None:
         # verify each partition individually
         for p in self:
             p.verify(secure)
@@ -367,7 +373,7 @@ class PartitionTable(list):
             raise InputError('Partition names must be unique')
 
         # check for overlaps
-        last = None
+        last: PartitionDefinition | None = None
         for p in sorted(self, key=lambda x: x.offset):
             if partition_table_offset is not None and p.offset < partition_table_offset + PARTITION_TABLE_SIZE:
                 is_primary_bootloader = p.type == BOOTLOADER_TYPE and p.subtype == SUBTYPES[p.type]['primary']
@@ -407,7 +413,7 @@ class PartitionTable(list):
             raise InputError('TEE otadata partition must have size = 0x2000')
 
 
-    def flash_size(self):
+    def flash_size(self) -> int:
         """Return the size that partitions will occupy in flash
         (ie the offset the last partition ends at)
         """
@@ -431,7 +437,7 @@ class PartitionTable(list):
             )
 
     @classmethod
-    def from_binary(cls, b, md5sum=True):
+    def from_binary(cls, b: bytes, md5sum: bool = True) -> PartitionTable:
         md5 = hashlib.md5()
         result = cls()
         for o in range(0, len(b), 32):
@@ -445,7 +451,7 @@ class PartitionTable(list):
                     continue  # the next iteration will check for the end marker
                 else:
                     raise InputError(
-                        "MD5 checksums don't match! (computed: 0x%s, parsed: 0x%s)"
+                        "MD5 checksums don't match! (computed: 0x%s, parsed: 0x%r)"
                         % (md5.hexdigest(), binascii.hexlify(data[16:]))
                     )
             else:
@@ -453,7 +459,7 @@ class PartitionTable(list):
             result.append(PartitionDefinition.from_binary(data))
         raise InputError('Partition table is missing an end-of-table marker')
 
-    def to_binary(self, md5sum=True):
+    def to_binary(self, md5sum: bool = True) -> bytes:
         result = b''.join(e.to_binary() for e in self)
         if md5sum:
             result += MD5_PARTITION_BEGIN + hashlib.md5(result).digest()
@@ -462,7 +468,7 @@ class PartitionTable(list):
         result += b'\xff' * (MAX_PARTITION_LENGTH - len(result))  # pad the sector, for signing
         return result
 
-    def to_csv(self, simple_formatting=False):
+    def to_csv(self, simple_formatting: bool = False) -> str:
         rows = ['# ESP-IDF Partition Table', '# Name, Type, SubType, Offset, Size, Flags']
         rows += [x.to_csv(simple_formatting) for x in self]
         return '\n'.join(rows) + '\n'
@@ -475,6 +481,17 @@ class PartitionDefinition(object):
     # to bit set in flags words in binary format
     FLAGS = {'encrypted': 0, 'readonly': 1}
 
+    name: str
+    # None on a fresh PartitionDefinition() until set, and offset and size until
+    # PartitionTable.from_csv fills them in; set on every entry a table holds.
+    type: int
+    subtype: int
+    offset: int
+    size: int
+    encrypted: bool
+    readonly: bool
+    line_no: int
+
     # add subtypes for the 16 OTA slot values ("ota_XX, etc.")
     for ota_slot in range(NUM_PARTITION_SUBTYPE_APP_OTA):
         SUBTYPES[TYPES['app']]['ota_%d' % ota_slot] = MIN_PARTITION_SUBTYPE_APP_OTA + ota_slot
@@ -483,17 +500,17 @@ class PartitionDefinition(object):
     for tee_slot in range(NUM_PARTITION_SUBTYPE_APP_TEE):
         SUBTYPES[TYPES['app']]['tee_%d' % tee_slot] = MIN_PARTITION_SUBTYPE_APP_TEE + tee_slot
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = ''
-        self.type = None
-        self.subtype = None
-        self.offset = None
-        self.size = None
+        self.type = None  # type: ignore[assignment]
+        self.subtype = None  # type: ignore[assignment]
+        self.offset = None  # type: ignore[assignment]
+        self.size = None  # type: ignore[assignment]
         self.encrypted = False
         self.readonly = False
 
     @classmethod
-    def default_bootloader(cls, offset, size):
+    def default_bootloader(cls, offset: int, size: int) -> PartitionDefinition:
         """ Create a default bootloader partition definition """
         res = PartitionDefinition()
         res.name = 'bootloader'
@@ -504,7 +521,7 @@ class PartitionDefinition(object):
         return res
 
     @classmethod
-    def default_partition_table(cls, offset, size):
+    def default_partition_table(cls, offset: int, size: int) -> PartitionDefinition:
         """ Create a default partition table definition """
         res = PartitionDefinition()
         res.name = 'partition_table'
@@ -516,7 +533,7 @@ class PartitionDefinition(object):
 
 
     @classmethod
-    def from_csv(cls, line, line_no, partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None):
+    def from_csv(cls, line: str, line_no: int, partition_table_offset: int = PARTITION_TABLE_OFFSET, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None) -> PartitionDefinition:
         """Parse a line from the CSV"""
         line_w_defaults = line + ',,,,'  # lazy way to support default fields
         fields = [f.strip() for f in line_w_defaults.split(',')]
@@ -526,8 +543,8 @@ class PartitionDefinition(object):
         res.name = fields[0]
         res.type = res.parse_type(fields[1])
         res.subtype = res.parse_subtype(fields[2])
-        res.offset = res.parse_address(fields[3], res.type, res.subtype, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset)
-        res.size = res.parse_size(fields[4], res.type, partition_table_offset, primary_bootloader_offset)
+        res.offset = res.parse_address(fields[3], res.type, res.subtype, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset)  # type: ignore[assignment]
+        res.size = res.parse_size(fields[4], res.type, partition_table_offset, primary_bootloader_offset)  # type: ignore[assignment]
         if res.size is None:
             raise InputError("Size field can't be empty")
 
@@ -540,7 +557,8 @@ class PartitionDefinition(object):
 
         return res
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        other = cast(PartitionDefinition, other)
         return (
             self.name == other.name
             and self.type == other.type
@@ -549,8 +567,8 @@ class PartitionDefinition(object):
             and self.size == other.size
         )
 
-    def __repr__(self):
-        def maybe_hex(x):
+    def __repr__(self) -> str:
+        def maybe_hex(x: Optional[int]) -> str:
             return '0x%x' % x if x is not None else 'None'
 
         return "PartitionDefinition('%s', 0x%x, 0x%x, %s, %s)" % (
@@ -561,7 +579,7 @@ class PartitionDefinition(object):
             maybe_hex(self.size),
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Part '%s' %d/%d @ 0x%x size 0x%x" % (
             self.name,
             self.type,
@@ -571,34 +589,34 @@ class PartitionDefinition(object):
         )
 
 
-    def __cmp__(self, other):
+    def __cmp__(self, other: PartitionDefinition) -> int:
         return self.offset - other.offset
 
-    def __lt__(self, other):
+    def __lt__(self, other: PartitionDefinition) -> bool:
         return self.offset < other.offset
 
-    def __gt__(self, other):
+    def __gt__(self, other: PartitionDefinition) -> bool:
         return self.offset > other.offset
 
-    def __le__(self, other):
+    def __le__(self, other: PartitionDefinition) -> bool:
         return self.offset <= other.offset
 
-    def __ge__(self, other):
+    def __ge__(self, other: PartitionDefinition) -> bool:
         return self.offset >= other.offset
 
-    def parse_type(self, strval):
+    def parse_type(self, strval: str) -> int:
         if strval == '':
             raise InputError("Field 'type' can't be left empty.")
         return parse_int(strval, TYPES)
 
-    def parse_subtype(self, strval):
+    def parse_subtype(self, strval: str) -> int:
         if strval == '':
             if self.type == TYPES['app']:
                 raise InputError('App partition cannot have an empty subtype')
             return SUBTYPES[DATA_TYPE]['undefined']
         return parse_int(strval, SUBTYPES.get(self.type, {}))
 
-    def parse_size(self, strval, ptype, partition_table_offset: Optional[int] = None, primary_bootloader_offset: Optional[int] = None):
+    def parse_size(self, strval: str, ptype: int, partition_table_offset: Optional[int] = None, primary_bootloader_offset: Optional[int] = None) -> Optional[int]:
         if ptype == BOOTLOADER_TYPE:
             if partition_table_offset is None:
                 raise InputError('Partition table offset is not provided')
@@ -611,7 +629,7 @@ class PartitionDefinition(object):
             return None  # PartitionTable will fill in default
         return parse_int(strval)
 
-    def parse_address(self, strval, ptype, psubtype, partition_table_offset: Optional[int] = None, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None):
+    def parse_address(self, strval: str, ptype: int, psubtype: int, partition_table_offset: Optional[int] = None, primary_bootloader_offset: Optional[int] = None, recovery_bootloader_offset: Optional[int] = None) -> Optional[int]:
         if ptype == BOOTLOADER_TYPE:
             if psubtype == SUBTYPES[ptype]['primary']:
                 if primary_bootloader_offset is None:
@@ -629,7 +647,7 @@ class PartitionDefinition(object):
             return None  # PartitionTable will fill in default
         return parse_int(strval)
 
-    def verify(self, secure: Optional[str] = SECURE_NONE):
+    def verify(self, secure: Optional[str] = SECURE_NONE) -> None:
         if self.type is None:
             raise ValidationError(self, 'Type field is not set')
         if self.subtype is None:
@@ -646,7 +664,7 @@ class PartitionDefinition(object):
             if self.size % size_align:
                 raise ValidationError(self, 'Size 0x%x is not aligned to 0x%x' % (self.size, size_align))
 
-        all_subtype_names = []
+        all_subtype_names: List[str] = []
         for names in (t.keys() for t in SUBTYPES.values()):
             all_subtype_names += names
 
@@ -670,14 +688,14 @@ class PartitionDefinition(object):
     STRUCT_FORMAT = b'<2sBBLL16sL'
 
     @classmethod
-    def from_binary(cls, b):
+    def from_binary(cls, b: bytes) -> PartitionDefinition:
         if len(b) != 32:
             raise InputError('Partition definition length must be exactly 32 bytes. Got %d bytes.' % len(b))
         res = cls()
-        (magic, res.type, res.subtype, res.offset, res.size, res.name, flags) = struct.unpack(cls.STRUCT_FORMAT, b)
-        if b'\x00' in res.name:  # strip null byte padding from name string
-            res.name = res.name[: res.name.index(b'\x00')]
-        res.name = res.name.decode()
+        (magic, res.type, res.subtype, res.offset, res.size, name, flags) = struct.unpack(cls.STRUCT_FORMAT, b)
+        if b'\x00' in name:  # strip null byte padding from name string
+            name = name[: name.index(b'\x00')]
+        res.name = name.decode()
         if magic != cls.MAGIC_BYTES:
             raise InputError('Invalid magic bytes (%r) for partition definition' % magic)
         for flag, bit in cls.FLAGS.items():
@@ -686,10 +704,10 @@ class PartitionDefinition(object):
                 flags &= ~(1 << bit)
         return res
 
-    def get_flags_list(self):
+    def get_flags_list(self) -> List[str]:
         return [flag for flag in self.FLAGS.keys() if getattr(self, flag)]
 
-    def to_binary(self):
+    def to_binary(self) -> bytes:
         flags = sum((1 << self.FLAGS[flag]) for flag in self.get_flags_list())
         return struct.pack(
             self.STRUCT_FORMAT,
@@ -702,21 +720,21 @@ class PartitionDefinition(object):
             flags,
         )
 
-    def to_csv(self, simple_formatting=False):
-        def addr_format(a, include_sizes):
+    def to_csv(self, simple_formatting: bool = False) -> str:
+        def addr_format(a: int, include_sizes: bool) -> str:
             if not simple_formatting and include_sizes:
                 for val, suffix in [(0x100000, 'M'), (0x400, 'K')]:
                     if a % val == 0:
                         return '%d%s' % (a // val, suffix)
             return '0x%x' % a
 
-        def lookup_keyword(t, keywords):
+        def lookup_keyword(t: int, keywords: Mapping[str, int]) -> str:
             for k, v in keywords.items():
                 if simple_formatting is False and t == v:
                     return k
             return '%d' % t
 
-        def generate_text_flags():
+        def generate_text_flags() -> str:
             """colon-delimited list of flags"""
             return ':'.join(self.get_flags_list())
 
@@ -732,7 +750,7 @@ class PartitionDefinition(object):
         )
 
 
-def parse_int(v, keywords={}):
+def parse_int(v: str, keywords: Mapping[str, int] = {}) -> int:
     """Generic parser for integer fields - int(x,0) with provision for
     k/m/K/M suffixes and 'keyword' value lookup.
     """
@@ -751,10 +769,10 @@ def parse_int(v, keywords={}):
 
 
 class InputError(RuntimeError):
-    def __init__(self, e):
+    def __init__(self, e: object) -> None:
         super(InputError, self).__init__(e)
 
 class ValidationError(InputError):
-    def __init__(self, partition, message):
+    def __init__(self, partition: PartitionDefinition, message: str) -> None:
         super(ValidationError, self).__init__(
             'Partition %s invalid: %s' % (partition.name, message))

@@ -17,7 +17,7 @@ class OtaImageState(IntEnum):
     UNDEFINED      = 0xFFFFFFFF
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: object) -> OtaImageState:
         return cls.UNDEFINED
 
 
@@ -53,11 +53,9 @@ class OtaDataSelectEntry:
 
     @classmethod
     def select(cls, a: OtaDataSelectEntry | None, b: OtaDataSelectEntry | None) -> Tuple[OtaDataSelectEntry, Literal['a', 'b']] | Tuple[None, None]:
-        if not a and not b:
-            return None, None
-        if not b:
-            return a, 'a'
-        if not a:
+        if b is None:
+            return (a, 'a') if a is not None else (None, None)
+        if a is None:
             return b, 'b'
 
         if a.seq > b.seq:
@@ -65,17 +63,18 @@ class OtaDataSelectEntry:
         else:
             return b, 'b'
 
-    def ota_slot(self, ota_app_count):
+    def ota_slot(self, ota_app_count: int) -> int:
         return (self.seq - 1) % ota_app_count
 
-    def incremented(self, ota_slot, ota_count) -> OtaDataSelectEntry:
+    def incremented(self, ota_slot: int, ota_count: int) -> OtaDataSelectEntry:
         ota_slot_diff = (((ota_slot - self.ota_slot(ota_count)) + ota_count - 1) % ota_count) + 1
         return OtaDataSelectEntry(self.seq + ota_slot_diff)
 
 @dataclass
 class OtaDataParameters:
     otadata: OtaDataSelectEntry | None
-    a_or_b: Literal['a', 'b']
+    # None when neither otadata sector holds a valid entry.
+    a_or_b: Literal['a', 'b'] | None
     app_count: int
 
     def incremented_and_swapped(self, ota_slot: int) -> OtaDataParameters:
@@ -87,7 +86,7 @@ class OtaDataParameters:
         )
 
     @property
-    def slot(self):
+    def slot(self) -> int | None:
         if not self.otadata:
             return None
         else:

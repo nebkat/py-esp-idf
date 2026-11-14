@@ -41,7 +41,7 @@ class AppDescription:
         if struct.unpack_from('<I', buffer, 0)[0] != cls.MAGIC:
             raise ValueError("Invalid firmware file, magic not found")
 
-        def decode_string(start, length):
+        def decode_string(start: int, length: int) -> str:
             return buffer[start:start + length].split(b'\x00', 1)[0].decode('utf-8')
 
         project_name = decode_string(48, 32)

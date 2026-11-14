@@ -23,7 +23,7 @@ class ResetReason(IntEnum):
     CPU_LOCKUP = 15
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: object) -> ResetReason:
         return cls.UNKNOWN
 
     @property

@@ -17,4 +17,7 @@
 [tool.setuptools]
     packages = ["esp_idf_defs"]
 
+[tool.setuptools.package-data]
+    esp_idf_defs = ["py.typed"]
+
 [tool.setuptools_scm]
