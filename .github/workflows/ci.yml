@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e ".[typing]"
+
+      - name: mypy --strict
+        run: mypy
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Check py.typed is shipped
+        run: |
+          unzip -l dist/*.whl | grep -q 'esp_idf_defs/py.typed'
+          tar -tzf dist/*.tar.gz | grep -q 'esp_idf_defs/py.typed'

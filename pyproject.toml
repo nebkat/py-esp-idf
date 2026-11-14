@@ -11,6 +11,9 @@
     dynamic = ["version"]
     dependencies = []
 
+[project.optional-dependencies]
+    typing = ["mypy==2.4.1"]
+
 [project.urls]
     Source = "https://github.com/nebkat/py-esp-idf"
 
@@ -21,3 +24,7 @@
     esp_idf_defs = ["py.typed"]
 
 [tool.setuptools_scm]
+
+[tool.mypy]
+    files = ["esp_idf_defs"]
+    strict = true
