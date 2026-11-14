@@ -115,7 +115,7 @@ class ImageHeader:
             chip_id = ChipId(struct.unpack_from('<H', buffer, 12)[0]),
             min_chip_rev = struct.unpack_from('<B', buffer, 14)[0],
             min_chip_rev_full = struct.unpack_from('<H', buffer, 15)[0],
-            max_chip_rev_full = struct.unpack_from('<H', buffer, 11)[0],
+            max_chip_rev_full = struct.unpack_from('<H', buffer, 17)[0],
             hash_appended = bool(struct.unpack_from('<B', buffer, 23)[0] == 1)
         )
 
