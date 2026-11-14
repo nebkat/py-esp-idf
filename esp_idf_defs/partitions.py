@@ -10,7 +10,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import binascii
 import codecs
 import hashlib
 import os
@@ -451,8 +450,8 @@ class PartitionTable(List["PartitionDefinition"]):
                     continue  # the next iteration will check for the end marker
                 else:
                     raise InputError(
-                        "MD5 checksums don't match! (computed: 0x%s, parsed: 0x%r)"
-                        % (md5.hexdigest(), binascii.hexlify(data[16:]))
+                        "MD5 checksums don't match! (computed: 0x%s, parsed: 0x%s)"
+                        % (md5.hexdigest(), data[16:].hex())
                     )
             else:
                 md5.update(data)
